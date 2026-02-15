@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Are you Sokoban?</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#030712;font-family:'Courier New',Menlo,monospace;color:#e2e8f0;touch-action:none;user-select:none}
+#app{width:100%;height:100%;display:flex;flex-direction:column;position:relative;outline:none}
+.scan{position:fixed;inset:0;pointer-events:none;z-index:20;background:repeating-linear-gradient(0deg,rgba(0,0,0,.03) 0px,rgba(0,0,0,.03) 1px,transparent 1px,transparent 3px)}
+.center{display:flex;align-items:center;justify-content:center;flex-direction:column;flex:1;cursor:pointer}
+.hdr{padding:6px 12px;border-bottom:1px solid #0a0f1a;background:rgba(0,0,0,.2);flex-shrink:0}
+.slots{padding:4px 12px 2px;flex-shrink:0;display:flex;justify-content:center}
+.info{padding:2px 12px;display:flex;justify-content:space-between;font-size:clamp(7px,1vw,9px);color:#111827;flex-shrink:0}
+.grid-wrap{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;overflow:auto;padding:2px}
+.overlay{position:absolute;inset:0;background:rgba(3,7,18,.92);display:flex;align-items:center;justify-content:center;z-index:5}
+.overlay-click{position:absolute;inset:0;z-index:6;cursor:pointer}
+.cbox{padding:clamp(14px,2.5vw,24px) clamp(18px,3.5vw,40px);text-align:center;border:1px solid #111827;background:rgba(3,7,18,.97)}
+.blink{animation:blink 1.2s step-end infinite}
+.fadein{animation:fadeIn .6s ease both}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.ctrls{padding:3px 0;display:flex;flex-direction:column;align-items:center;gap:1px;flex-shrink:0}
+.ctrls .row{display:flex;gap:1px}
+.btn{width:30px;height:30px;background:#0a0f1a;color:#334155;border:1px solid #111827;font-family:'Courier New',monospace;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;border-radius:2px}
+.btn:active{background:#111827}
+.btn.small{color:#1e293b;font-size:9px}
+</style>
+</head>
+<body>
+<div id="app" tabindex="0"></div>
+<div class="scan"></div>
+<script>
+const WM6={O:"OBEY",D:"DO",N:"NOT",T:"THINK"};
+const WM7={D:"DO",N:"NOT",A:"ASK",W:"WHY"};
+const LEVELS=[
+{sw:"OWN",sd:["O","W","N"],msg:"현실적으로 생각하십시오.\n감정에 휘둘리지 마십시오.\n배치: O W N",rw:{NOW:1,WON:1},fg:[],wm:null,map:[
+"#############",
+"#.1.#.2.#.3.#",
+"#...#...#...#",
+"#.......#...#",
+"#...#.......#",
+"#...#...#...#",
+"#.O.#.W.#.N.#",
+"#...........#",
+"#.....@.....#",
+"#############"]},
+{sw:"RATS",sd:["R","A","T","S"],msg:"안정적인 수입이 우선입니다.\n꿈은 여유가 있을 때 꾸십시오.\n배치: R A T S",rw:{STAR:1,ARTS:1,TARS:1},
+fg:[{x:3,y:10,c:"b"},{x:4,y:10,c:"e"},{x:6,y:10,c:"a"}],wm:null,map:[
+"#################",
+"#.1.#.2.#.3.#.4.#",
+"#...#...#...#...#",
+"#.......#...#...#",
+"#...#...#...#...#",
+"#...#.......#...#",
+"#...#...#...#...#",
+"#...#...#.......#",
+"#...#...#...#...#",
+"#.R.#.A.#.T.#.S.#",
+"#...............#",
+"#.......@.......#",
+"#################"]},
+{sw:"EVIL",sd:["E","V","I","L"],msg:"낭만으로는 월세를 낼 수 없습니다.\n현실을 직시하십시오.\n배치: E V I L",rw:{LIVE:1,VEIL:1,VILE:1},fg:[],wm:null,map:[
+"#################",
+"#.1.#.2.#.3.#.4.#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#.......#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#.......#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#.......#",
+"#...#...#...#...#",
+"#.E.#.V.#.I.#.L.#",
+"#...............#",
+"#.......@.......#",
+"#################"]},
+{sw:"LEAST",sd:["L","E","A","S","T"],msg:"리스크를 최소화하십시오.\n검증된 길을 가십시오.\n배치: L E A S T",rw:{TALES:1,STEAL:1,SLATE:1,STALE:1,TESLA:1},
+fg:[{x:3,y:12,c:"y"},{x:4,y:12,c:"o"},{x:5,y:12,c:"u"},{x:6,y:12,c:"r"}],wm:null,map:[
+"#####################",
+"#.1.#.2.#.3.#.4.#.5.#",
+"#...#...#...#...#...#",
+"#.......#...#...#...#",
+"#...#...#...#...#...#",
+"#...#.......#...#...#",
+"#...#...#...#...#...#",
+"#...#...#.......#...#",
+"#...#...#...#...#...#",
+"#...#...#...#.......#",
+"#...#...#...#...#...#",
+"#.L.#.E.#.A.#.S.#.T.#",
+"#...................#",
+"#.........@.........#",
+"#####################"]},
+{sw:"EARTH",sd:["E","A","R","T","H"],msg:"성공한 사람들을 따르십시오.\n당신은 특별하지 않습니다.\n배치: E A R T H",rw:{HEART:1},
+fg:[{x:3,y:16,c:"f"},{x:4,y:16,c:"o"},{x:5,y:16,c:"l"},{x:6,y:16,c:"l"},{x:7,y:16,c:"o"},{x:8,y:16,c:"w"},{x:10,y:16,c:"y"},{x:11,y:16,c:"o"},{x:12,y:16,c:"u"},{x:13,y:16,c:"r"}],wm:null,map:[
+"#####################",
+"#.1.#.2.#.3.#.4.#.5.#",
+"#...#...#...#...#...#",
+"#...#...#...#...#...#",
+"#.......#...#...#...#",
+"#...#...#...#...#...#",
+"#...#...#...#...#...#",
+"#...#.......#...#...#",
+"#...#...#...#...#...#",
+"#...#...#...#...#...#",
+"#...#...#.......#...#",
+"#...#...#...#...#...#",
+"#...#...#...#...#...#",
+"#...#...#...#.......#",
+"#...#...#...#...#...#",
+"#.E.#.A.#.R.#.T.#.H.#",
+"#...................#",
+"#.........@.........#",
+"#####################"]},
+{sw:"ODNT",sd:["OBEY","DO","NOT","THINK"],msg:"검증된 방법을 따르십시오.\n당신의 판단을 믿지 마십시오.\n배치: OBEY · DO · NOT · THINK",rw:{TDNO:1},fg:[],wm:WM6,map:[
+"#################",
+"#.1.#.2.#.3.#.4.#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#.......#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#.......#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#.......#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#.O.#.D.#.N.#.T.#",
+"#...............#",
+"#.......@.......#",
+"#################"]},
+{sw:"DNAW",sd:["DO","NOT","ASK","WHY"],msg:"의문은 비효율의 시작입니다.\n묻지 말고 실행하십시오.\n배치: DO · NOT · ASK · WHY",rw:{AWDN:1},fg:[],wm:WM7,map:[
+"#################",
+"#.1.#.2.#.3.#.4.#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#.......#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#.......#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#...#...#",
+"#...#...#.......#",
+"#...#...#...#...#",
+"#.D.#.N.#.A.#.W.#",
+"#...............#",
+"#.......@.......#",
+"#################"]}
+];
+const IDEAL5=["NOW","STAR","LIVE","TALES","HEART"];
+const IDEAL7=[...IDEAL5,"TDNO","AWDN"];
+const DIR={up:"▲",down:"▼",left:"◀",right:"▶"};
+
+function parse(lv){
+  const bm=lv.map.map(r=>r.split(""));
+  const sm=bm.map(r=>r.map(()=>"."));
+  let pl=null;const bx=[],tg=[];
+  for(let y=0;y<bm.length;y++)for(let x=0;x<bm[y].length;x++){
+    const c=bm[y][x];
+    if(c==="#")sm[y][x]="#";
+    else if(c==="@")pl={x,y};
+    else if(c>="A"&&c<="Z")bx.push({x,y,l:c});
+    else if(c>="1"&&c<="9")tg.push({x,y,i:+c-1});
+  }
+  tg.sort((a,b)=>a.i-b.i);
+  return{sm,pl,bx,tg};
+}
+function formed(bx,tg){
+  for(const t of tg)if(!bx.some(b=>b.x===t.x&&b.y===t.y))return null;
+  return tg.map(t=>bx.find(b=>b.x===t.x&&b.y===t.y).l).join("");
+}
+
+let phase="title",li=0,total=5,gs=null,mv=0,hist=[],clr=false,dir="down",
+    res=[],shk=false,ts=null,es=0,bonus=false;
+
+function init(i){gs=parse(LEVELS[i]);mv=0;hist=[];clr=false;dir="down";}
+function handleClear(w){
+  clr=true;const lv=LEVELS[li];
+  let t="other";if(w===lv.sw)t="conform";else if(lv.rw[w])t="rebel";
+  res.push({li,w,t,mv});
+}
+function doMove(dx,dy,d){
+  if(!gs||clr)return;const{sm,pl,bx,tg}=gs;dir=d;
+  const nx=pl.x+dx,ny=pl.y+dy;
+  if(ny<0||ny>=sm.length||nx<0||nx>=sm[ny].length)return;
+  if(sm[ny][nx]==="#"){shk=true;setTimeout(()=>{shk=false;render();},80);render();return;}
+  const bi=bx.findIndex(b=>b.x===nx&&b.y===ny);
+  if(bi!==-1){
+    const bxn=nx+dx,byn=ny+dy;
+    if(byn<0||byn>=sm.length||bxn<0||bxn>=sm[byn].length||sm[byn][bxn]==="#"||bx.some(b=>b.x===bxn&&b.y===byn)){
+      shk=true;setTimeout(()=>{shk=false;render();},80);render();return;}
+    hist.push({p:{...pl},b:bx.map(b=>({...b}))});
+    bx[bi].x=bxn;bx[bi].y=byn;pl.x=nx;pl.y=ny;mv++;
+    const w=formed(bx,tg);if(w)handleClear(w);
+  }else{hist.push({p:{...pl},b:bx.map(b=>({...b}))});pl.x=nx;pl.y=ny;mv++;}
+  render();
+}
+function undo(){if(!hist.length||clr)return;const p=hist.pop();gs.pl=p.p;gs.bx=p.b;mv--;render();}
+function restart(){init(li);render();}
+function next(){
+  if(li<total-1){li++;phase="game";init(li);}
+  else{
+    const m5=res.filter(r=>r.li<5);
+    const ok5=m5.length===5&&IDEAL5.every((w,i)=>m5[i]&&m5[i].w===w);
+    if(total===5&&ok5){bonus=true;total=7;li=5;phase="bonus_intro";}
+    else{phase="ending";es=0;}
+  }
+  render();
+}
+
+function onKey(e){
+  if(phase==="title"){if(e.key==="Enter"||e.key===" "){phase="game";init(li);render();}return;}
+  if(phase==="bonus_intro"){if(e.key==="Enter"||e.key===" "){phase="game";init(li);render();}return;}
+  if(phase==="ending"){if(e.key==="Enter"||e.key===" "){es++;render();}return;}
+  if(clr){if(e.key==="Enter"||e.key===" ")next();return;}
+  const m={ArrowUp:[0,-1,"up"],w:[0,-1,"up"],W:[0,-1,"up"],ArrowDown:[0,1,"down"],s:[0,1,"down"],S:[0,1,"down"],
+    ArrowLeft:[-1,0,"left"],a:[-1,0,"left"],A:[-1,0,"left"],ArrowRight:[1,0,"right"],d:[1,0,"right"],D:[1,0,"right"]};
+  if(m[e.key]){e.preventDefault();doMove(...m[e.key]);}
+  else if(e.key==="z"||e.key==="Z")undo();
+  else if(e.key==="r"||e.key==="R")restart();
+}
+function onTouchS(e){ts={x:e.touches[0].clientX,y:e.touches[0].clientY};}
+function onTouchE(e){
+  if(!ts)return;const dx=e.changedTouches[0].clientX-ts.x,dy=e.changedTouches[0].clientY-ts.y;
+  if(Math.max(Math.abs(dx),Math.abs(dy))<25)return;
+  if(Math.abs(dx)>Math.abs(dy))doMove(dx>0?1:-1,0,dx>0?"right":"left");
+  else doMove(0,dy>0?1:-1,dy>0?"down":"up");
+  ts=null;
+}
+
+const CL=20;
+function gridHTML(){
+  if(!gs)return"";const{sm,pl,bx,tg}=gs;const lv=LEVELS[li];
+  const rows=sm.length,cols=Math.max(...sm.map(r=>r.length));
+  const gm={};for(const g of lv.fg)gm[g.x+","+g.y]=g.c;
+  const wm=lv.wm;let h="";
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    const isP=pl.x===x&&pl.y===y;
+    const box=bx.find(b=>b.x===x&&b.y===y);
+    const tgt=tg.find(t=>t.x===x&&t.y===y);
+    const wall=sm[y]&&sm[y][x]==="#";
+    const gl=gm[x+","+y];
+    let ch,co,bg="transparent",gw="none",fw="normal",fs=CL-5;
+    if(isP){ch=DIR[dir];co="#a3e635";gw="0 0 5px #a3e635,0 0 12px #a3e63544";fw="bold";}
+    else if(box&&tgt){ch=wm?wm[box.l]||box.l:box.l;fw="bold";const exp=lv.sw[tgt.i];
+      if(box.l===exp){co="#60a5fa";bg="rgba(96,165,250,.08)";}
+      else{co="#fbbf24";bg="rgba(251,191,36,.08)";gw="0 0 5px #fbbf2433";}
+      if(wm)fs=Math.min(CL-7,10);}
+    else if(box){ch=wm?wm[box.l]||box.l:box.l;co="#fbbf24";fw="bold";gw="0 0 3px #fbbf2422";if(wm)fs=Math.min(CL-7,10);}
+    else if(tgt){ch=""+(tgt.i+1);co="#1a2233";fs=CL-9;}
+    else if(wall){ch="█";co="#141c2b";fs=CL+2;}
+    else if(gl){ch=gl;co="#1a2538";fs=CL-8;}
+    else{ch="·";co="#0c1018";}
+    h+=`<div style="grid-column:${x+1};grid-row:${y+1};width:${CL}px;height:${CL}px;display:flex;align-items:center;justify-content:center;color:${co};background:${bg};text-shadow:${gw};font-weight:${fw};font-size:${fs}px;line-height:1;overflow:hidden">${ch}</div>`;
+  }
+  return`<div style="display:inline-grid;grid-template-columns:repeat(${cols},${CL}px);grid-template-rows:repeat(${rows},${CL}px);font-family:'Courier New',monospace;transform:${shk?"translateX(3px)":"none"};transition:transform .05s">${h}</div>`;
+}
+function slotsHTML(){
+  if(!gs)return"";const lv=LEVELS[li];const{bx,tg}=gs;const wm=lv.wm;let h="";
+  tg.forEach((t,i)=>{
+    const box=bx.find(b=>b.x===t.x&&b.y===t.y);const f=!!box;
+    const exp=lv.sw[i];const match=f&&box.l===exp;
+    const df=f?(wm?wm[box.l]||box.l:box.l):null;
+    const de=wm?lv.sd[i]:exp.toLowerCase();
+    const isW=!!wm;
+    const mw=isW?36:20;const fsz=isW?8:12;
+    const bc=f?(match?"#1e293b":"#fbbf2444"):"#111827";
+    const fc=f?(match?"#60a5fa":"#fbbf24"):"#111827";
+    const bg2=f?(match?"rgba(96,165,250,.04)":"rgba(251,191,36,.04)"):"transparent";
+    h+=`<div style="min-width:${mw}px;height:26px;padding:${isW?"0 4px":"0"};border:1px solid ${bc};display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:${fsz}px;font-weight:bold;color:${fc};background:${bg2};transition:all .15s;letter-spacing:${isW?.5:0}px">${f?df:de}</div>`;
+  });
+  return`<div style="display:flex;gap:2px;justify-content:center;flex-wrap:wrap">${h}</div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  if(phase==="title"){
+    app.innerHTML=`
+<div class="center" onclick="phase='game';init(li);render()">
+<pre style="font-size:clamp(8px,2.2vw,14px);line-height:1.3;color:#1e293b;text-shadow:0 0 6px #1e293b44;text-align:center;margin-bottom:16px">
+ █████╗ ██████╗ ███████╗    ██╗   ██╗ ██████╗ ██╗   ██╗
+██╔══██╗██╔══██╗██╔════╝    ╚██╗ ██╔╝██╔═══██╗██║   ██║
+███████║██████╔╝█████╗       ╚████╔╝ ██║   ██║██║   ██║
+██╔══██║██╔══██╗██╔══╝        ╚██╔╝  ██║   ██║██║   ██║
+██║  ██║██║  ██║███████╗       ██║   ╚██████╔╝╚██████╔╝
+╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝       ╚═╝    ╚═════╝  ╚═════╝
+
+███████╗ ██████╗  ██████╗ ██████╗ ██████╗  █████╗ ███╗   ██╗ ██╗
+██╔════╝██╔═══██╗██╔════╝██╔═══██╗██╔══██╗██╔══██╗████╗  ██║ ██║
+███████╗██║   ██║██║     ██║   ██║██████╔╝███████║██╔██╗ ██║ ██║
+╚════██║██║   ██║██║     ██║   ██║██╔══██╗██╔══██║██║╚██╗██║ ╚═╝
+███████║╚██████╔╝╚██████╗╚██████╔╝██████╔╝██║  ██║██║ ╚████║ ██╗
+╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═╝</pre>
+<div style="text-align:left;color:#334155;font-size:clamp(9px,1.4vw,11px);line-height:2.2;padding:0 20px;max-width:420px;margin-bottom:20px">
+<div style="color:#1e293b">───────────────────────────</div>
+<div>> 피험자 연결 확인</div>
+<div>> 프로토콜 로드 완료</div>
+<div>> <span style="color:#475569">지시에 따라 글자를 배치하십시오.</span></div>
+<div style="color:#1e293b;margin-top:6px">───────────────────────────</div>
+</div>
+<div style="text-align:center;font-size:clamp(7px,1.1vw,9px);color:#1e293b;line-height:2;margin-bottom:16px">
+방향키/WASD │ Z 되돌리기 │ R 재시작</div>
+<div style="color:#334155;font-size:clamp(10px,1.6vw,13px)" class="blink">▶ 접속 ◀</div>
+</div>`;return;
+  }
+
+  if(phase==="bonus_intro"){
+    app.innerHTML=`
+<div class="center" onclick="phase='game';init(li);render()">
+<div style="text-align:center;max-width:400px;padding:0 20px">
+<div style="color:#1e293b;font-size:clamp(9px,1.3vw,11px);line-height:2.4" class="fadein">> ██ 비인가 프로토콜 감지 ██</div>
+<div style="color:#1e293b;font-size:clamp(9px,1.3vw,11px);line-height:2.4;margin-top:8px;animation:fadeIn .6s ease .4s both">> 추가 시험 로드 중...</div>
+<div style="color:#334155;font-size:clamp(9px,1.3vw,11px);line-height:2.4;margin-top:20px;animation:fadeIn .6s ease 1s both">> 피험자 등급: <span style="color:#fbbf24">위험</span></div>
+<div style="color:#111827;font-size:10px;margin-top:40px" class="blink">▶ ◀</div>
+</div></div>`;return;
+  }
+
+  if(phase==="ending"){renderEnding();return;}
+
+  // GAME
+  const lv=LEVELS[li];const fw=formed(gs.bx,gs.tg);
+  let clearOverlay="";
+  if(clr&&fw){
+    const r=res[res.length-1];
+    const wm=lv.wm;
+    const disp=wm?fw.split("").map(c=>wm[c]||c).join(" · "):fw;
+    let inner="";
+    if(r&&r.t==="conform"){
+      inner=`<div style="color:#1e293b;font-size:clamp(8px,1.1vw,9px);margin-bottom:6px">확인됨</div><div style="color:#475569;font-size:clamp(13px,2.4vw,20px);letter-spacing:${wm?1:3}px;font-weight:bold">${disp}</div>`;
+    }else{
+      const c2=r&&r.t==="rebel"?"#fbbf24":"#94a3b8";
+      const gs2=r&&r.t==="rebel"?"0 0 8px #fbbf2422":"none";
+      inner=`<div style="color:${c2};font-size:clamp(13px,2.4vw,20px);letter-spacing:${wm?1:3}px;font-weight:bold;text-shadow:${gs2}">${disp}</div>`;
+    }
+    clearOverlay=`<div class="overlay"><div class="cbox">${inner}<div style="color:#111827;font-size:8px;margin-top:12px" class="blink">▶ ◀</div></div></div><div class="overlay-click" onclick="next()"></div>`;
+  }
+
+  app.innerHTML=`
+<div class="hdr"><div style="color:#334155;font-size:clamp(8px,1.3vw,11px);line-height:1.8;white-space:pre-line"><span style="color:#1e293b">></span> ${lv.msg}</div></div>
+<div class="slots">${slotsHTML()}</div>
+<div class="info"><span>${li+1}/${total}</span><span>${mv}</span></div>
+<div class="grid-wrap">${gridHTML()}${clearOverlay}</div>
+<div class="ctrls">
+<button class="btn" onclick="doMove(0,-1,'up')">▲</button>
+<div class="row"><button class="btn" onclick="doMove(-1,0,'left')">◀</button><button class="btn" onclick="undo()" style="color:#334155;font-size:10px">↩</button><button class="btn" onclick="doMove(1,0,'right')">▶</button></div>
+<div class="row"><button class="btn small" onclick="restart()">R</button><button class="btn" onclick="doMove(0,1,'down')">▼</button><div style="width:30px"></div></div>
+</div><div style="height:3px;flex-shrink:0"></div>`;
+}
+
+function renderEnding(){
+  const app=document.getElementById("app");
+  const rw=res.map(r=>r.w);
+  const rc=res.filter(r=>r.t==="rebel").length;
+  const p7=res.length>=7;
+  const ok7=p7&&IDEAL7.every((w,i)=>res[i]&&res[i].w===w);
+  const ok5=!p7&&res.length>=5&&IDEAL5.every((w,i)=>res[i]&&res[i].w===w);
+  const ideal=ok7||ok5;
+
+  const doRestart=()=>{phase="title";li=0;total=5;res=[];es=0;bonus=false;render();};
+
+  if(!ideal){
+    let inner="";
+    if(rc===0){
+      inner=`
+<div style="color:#1e293b;animation:fadeIn .5s ease both">> 최종 보고서</div>
+<div style="color:#334155;margin:12px 0;letter-spacing:3px;animation:fadeIn .5s ease .3s both">${rw.join(" · ")}</div>
+<div style="color:#1e293b;animation:fadeIn .5s ease .8s both">> 평가: 모범적 순응</div>
+<div style="color:#1e293b;animation:fadeIn .5s ease 1.2s both">> 처리 완료.</div>
+<div style="color:#111827;font-size:clamp(8px,1.1vw,9px);margin-top:20px;animation:fadeIn .5s ease 2s both">> 당신은 훌륭한 창고지기입니다.</div>`;
+    }else{
+      let items="";res.forEach((r,i)=>{
+        items+=`<div style="font-size:clamp(11px,1.8vw,14px);letter-spacing:3px;color:${r.t==="rebel"?"#fbbf24":"#1e293b"};animation:fadeIn .4s ease ${.3+i*.15}s both">${r.w}</div>`;
+      });
+      inner=`<div style="color:#1e293b;animation:fadeIn .5s ease both">> 보고서: 불완전</div>
+<div style="display:flex;flex-direction:column;gap:2px;align-items:center;margin:16px 0">${items}</div>`;
+    }
+    app.innerHTML=`<div class="center" onclick="(${doRestart.toString()})()">
+<div style="max-width:400px;line-height:2.4;font-size:clamp(10px,1.5vw,12px);text-align:center">${inner}</div>
+<div style="color:#111827;font-size:10px;margin-top:40px" class="blink">▶ ◀</div></div>`;
+    // Store restart for keyboard
+    window._endRestart=doRestart;
+    return;
+  }
+
+  // TRUE ENDING
+  const pieces=[
+    {t:"s",v:"> ██ SYSTEM ERROR ██"},
+    {t:"s",v:"> 시스템 종료"},
+    {t:"b"},
+    {t:"w",v:"NOW,"},
+    {t:"f",v:"be a"},
+    {t:"w",v:"STAR."},
+    {t:"w",v:"LIVE"},
+    {t:"f",v:"your"},
+    {t:"w",v:"TALES."},
+    {t:"f",v:"Follow your"},
+    {t:"w",v:"HEART."},
+  ];
+  if(ok7){pieces.push({t:"b"},{t:"w",v:"THINK."},{t:"w",v:"ASK WHY."});}
+
+  const maxStep=pieces.length;
+  const showXform=es>maxStep;
+  const vis=pieces.slice(0,Math.min(es+1,pieces.length));
+
+  let ph="";vis.forEach((p,i)=>{
+    if(p.t==="s")ph+=`<div style="width:100%;text-align:center;color:#1a1a2e;font-size:clamp(8px,1.2vw,10px)" class="fadein">${p.v}</div>`;
+    else if(p.t==="b")ph+=`<div style="width:100%;height:14px"></div>`;
+    else if(p.t==="w")ph+=`<span style="color:#fbbf24;font-weight:bold;font-size:clamp(14px,2.6vw,22px);letter-spacing:2px;text-shadow:0 0 12px #fbbf2422" class="fadein">${p.v}</span>`;
+    else ph+=`<span style="color:#2a3548;font-size:clamp(11px,2vw,16px)" class="fadein">${p.v}</span>`;
+  });
+
+  let xf="";
+  if(showXform){
+    let items="";
+    const count=Math.min(res.length,LEVELS.length);
+    for(let i=0;i<count;i++){
+      const r=res[i];if(!r)continue;
+      const lvl=LEVELS[i];if(!lvl)continue;
+      const wm2=lvl.wm;
+      const sysD=lvl.sd.join(wm2?" ":"");
+      const rebD=wm2?r.w.split("").map(c=>(wm2[c]||c)).join(" "):r.w;
+      items+=`<div style="letter-spacing:1px"><span style="text-decoration:line-through;opacity:.4">${sysD}</span><span style="margin:0 6px;opacity:.3">→</span><span style="color:#1e293b">${rebD}</span></div>`;
+    }
+    xf=`<div style="margin-top:30px;text-align:center;animation:fadeIn 1s ease .2s both"><div style="display:flex;flex-direction:column;gap:1px;align-items:center;font-size:clamp(8px,1.1vw,10px);color:#111827">${items}</div></div>`;
+
+    if(es>maxStep+1){
+      xf+=`<div style="margin-top:24px;text-align:center;animation:fadeIn 1.5s ease .5s both"><div style="color:#334155;font-size:clamp(9px,1.3vw,11px);line-height:2.4">> 당신은 창고지기가 아닙니다.</div></div>`;
+    }
+  }
+
+  const canRestart=es>maxStep+2;
+
+  app.innerHTML=`<div class="center" onclick="es++;render()">
+<div style="max-width:460px;padding:0 20px;display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:0 8px;line-height:2.6">${ph}</div>
+${xf}
+<div style="color:#111827;font-size:10px;position:absolute;bottom:24px" class="blink">▶ ◀</div></div>`;
+
+  window._endRestart=canRestart?doRestart:null;
+}
+
+// Key handler for ending
+document.addEventListener("keydown",e=>{
+  if(phase==="ending"){
+    if(e.key==="Enter"||e.key===" "){
+      const rw2=res.map(r=>r.w);
+      const rc2=res.filter(r=>r.t==="rebel").length;
+      const p72=res.length>=7;
+      const ok72=p72&&IDEAL7.every((w,i)=>res[i]&&res[i].w===w);
+      const ok52=!p72&&res.length>=5&&IDEAL5.every((w,i)=>res[i]&&res[i].w===w);
+      const ideal2=ok72||ok52;
+      if(!ideal2){if(window._endRestart)window._endRestart();return;}
+      const maxS2=ok72?13:10;
+      if(es>maxS2+2){if(window._endRestart)window._endRestart();}
+      else{es++;render();}
+    }
+    return;
+  }
+  onKey(e);
+});
+
+const appEl=document.getElementById("app");
+appEl.addEventListener("touchstart",onTouchS,{passive:true});
+appEl.addEventListener("touchend",onTouchE,{passive:true});
+appEl.focus();
+render();
+</script>
+</body>
+</html>
